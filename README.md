@@ -84,10 +84,29 @@ hermes plugins enable blast-radius
 | `block_score` | `90` | score that blocks (enforce mode) |
 | `capsules` | `true` | take recovery capsules |
 | `capsule_max_mb` / `capsule_keep` / `capsule_days` | `200` / `200` / `14` | capsule limits |
+| `strict` | `false` | **fail closed**: a command whose effect cannot be measured does not run (see below) |
+
+### Strict mode: if it can't measure, it doesn't run
+
+By default blast-radius fails *open*: a bug in the plugin, or a command it cannot parse, never wedges
+the agent. Set `strict: true` for the opposite guarantee. Then these are **blocked**, with a message that tells
+the model to rewrite them with literal paths:
+
+* a command it cannot parse (unbalanced quote or similar), including inside `bash -c '...'`;
+* a command whose targets are unknowable from its text (`rm -rf $DIR`, `xargs rm`, command substitution,
+  `python -c "shutil.rmtree(...)"`);
+* any internal error while assessing a call.
+
+`strict` overrides `mode: advise`. The measurement itself always runs host-side, in Hermes' `pre_tool_call`
+hook, never in the model: the model supplies only the command text. The limits below still apply
+(a script that deletes files internally, such as `./cleanup.sh`, is not visible until it runs).
 
 ## Disclosure (what this plugin touches)
 
-* **Network:** none. No telemetry, no credentials read or stored.
+* **Network:** none. No telemetry. The plugin reads no credentials for its own use. One caveat: if a
+  pending command would delete a credential-looking file (`.env`, `*.pem`, `*.key`, `id_rsa*`, ...), a
+  **copy of that file goes into the recovery capsule** so it can be restored, so treat the plugin-data
+  directory as sensitive (see "Stored data").
 * **Subprocesses:** `git rev-parse --show-toplevel` and `git status --porcelain=v1 -z -uall
   --ignored=traditional`, run read-only (argv lists, `GIT_OPTIONAL_LOCKS=0`, hard timeouts) in the
   directories a pending command would affect. No other processes are started.
@@ -108,7 +127,7 @@ hermes plugins enable blast-radius
 ## Development
 
 ```
-cd tests && python -m pytest -q          # 58 tests, real git repos in temp dirs
+cd tests && python -m pytest -q          # 67 tests, real git repos in temp dirs
 hermes plugins validate . --install-deps
 hermes plugins doctor . --ci
 ```

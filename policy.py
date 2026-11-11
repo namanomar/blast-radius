@@ -28,6 +28,7 @@ class Config:
     max_scan_files: int = 20000
     shrink_pct: int = 70
     shrink_min_lines: int = 40
+    strict: bool = False             # fail closed: a call whose effect cannot be measured does not run
 
     @classmethod
     def from_getter(cls, get) -> "Config":
@@ -35,7 +36,7 @@ class Config:
         for name, typ in (("enabled", bool), ("mode", str), ("approve_score", int), ("block_score", int),
                           ("capsules", bool), ("capsule_max_mb", int), ("capsule_keep", int),
                           ("capsule_days", int), ("max_scan_files", int), ("shrink_pct", int),
-                          ("shrink_min_lines", int)):
+                          ("shrink_min_lines", int), ("strict", bool)):
             try:
                 v = get(name, getattr(c, name))
             except Exception:
@@ -58,6 +59,7 @@ class Verdict:
     tier: str
     reasons: List[Tuple[int, str]] = field(default_factory=list)
     critical: List[str] = field(default_factory=list)
+    unmeasurable: str = ""          # strict mode: why the effect could not be measured (action is then BLOCK)
 
     def to_dict(self) -> Dict[str, Any]:
         return {"action": self.action, "score": self.score, "tier": self.tier,
@@ -138,6 +140,10 @@ def score(imp: Impact, cfg: Config, partial_capsule: bool = False) -> Verdict:
     tier = tier_for(total)
     if imp.critical:
         return Verdict(BLOCK, 100, "CRITICAL", reasons, list(imp.critical))
+    if cfg.strict and imp.unresolved:
+        return Verdict(BLOCK, max(total, 90), "UNMEASURABLE", reasons,
+                       unmeasurable="its targets cannot be determined from the command text "
+                                    "(shell variables, xargs, command substitution or opaque code)")
     if total >= cfg.block_score and cfg.mode == "enforce":
         return Verdict(BLOCK, total, tier, reasons)
     if total >= cfg.approve_score:

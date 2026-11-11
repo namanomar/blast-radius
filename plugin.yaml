@@ -45,3 +45,7 @@ config_schema:
     type: int
     default: 14
     description: Delete capsules older than this many days.
+  strict:
+    type: bool
+    default: false
+    description: "Fail closed. A command whose effect cannot be measured (unparseable, unknown targets such as $VAR or xargs, or an internal error) is blocked instead of let through. Overrides mode: advise."

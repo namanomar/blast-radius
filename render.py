@@ -95,6 +95,13 @@ def render_approval(a: Assessment) -> str:
 
 def render_block(a: Assessment, mode: str) -> str:
     v = a.verdict
+    if v.unmeasurable:
+        return "\n".join([
+            f"Blocked by blast-radius (strict mode): its effect cannot be measured, {v.unmeasurable}.",
+            f"Command: {_cmd(a)}",
+            "Rewrite it with explicit literal paths and balanced quotes so the damage can be measured, "
+            "or ask the user to run it themselves. "
+            "(Use the blast_radius tool to preview the rewritten command first.)"])
     head = "Blocked by blast-radius: " + (
         "this command targets " + "; ".join(v.critical) if v.critical
         else f"risk score {v.score}/100 is above the block threshold")

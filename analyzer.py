@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import threading
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -394,14 +395,30 @@ def _git_op(args: List[str], cwd: Optional[str]) -> Optional[Op]:
     return None
 
 
-def analyze_command(command: str, cwd: Optional[str] = None, _depth: int = 0) -> List[Op]:
-    """Return destructive operations in a shell command line. Never raises."""
+class AnalysisError(Exception):
+    """Strict mode only: the command could not be analysed, so its effect is unknown."""
+
+
+_strict_state = threading.local()
+
+
+def analyze_command(command: str, cwd: Optional[str] = None, _depth: int = 0, strict: bool = False) -> List[Op]:
+    """Return destructive operations in a shell command line.
+
+    Default: never raises, and a command it cannot parse yields no operations (fail open).
+    ``strict=True`` raises :class:`AnalysisError` instead, including for nested ``bash -c '...'`` bodies.
+    """
+    outer = _depth == 0
+    if outer:
+        _strict_state.on = strict
     try:
         if not command or not command.strip():
             return []
         text = _newlines_to_semicolons(_strip_heredocs(command))
         tokens = _tokenize(text)
         if tokens is None:
+            if getattr(_strict_state, "on", False):
+                raise AnalysisError("the command cannot be parsed (unbalanced quote or similar)")
             return []
         ops: List[Op] = []
         cur = cwd
@@ -409,8 +426,15 @@ def analyze_command(command: str, cwd: Optional[str] = None, _depth: int = 0) ->
             seg_ops, cur = _analyze_segment(seg, cur, _depth)
             ops.extend(seg_ops)
         return ops
+    except AnalysisError:
+        raise
     except Exception:
+        if getattr(_strict_state, "on", False):
+            raise AnalysisError("internal error while analysing the command") from None
         return []
+    finally:
+        if outer:
+            _strict_state.on = False
 
 
 def analyze_patch(patch_text: str) -> List[Op]:

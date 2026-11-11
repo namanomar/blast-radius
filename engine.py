@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from . import analyzer as A
 from . import capsule
 from .measure import Impact, Limits, measure, measure_write
-from .policy import ALLOW, Config, Verdict, score
+from .policy import ALLOW, BLOCK, Config, Verdict, score
 
 TERMINAL_TOOLS = {"terminal"}
 WATCHED = {"terminal", "execute_code", "write_file", "patch"}
@@ -51,7 +51,10 @@ def assess_call(tool: str, args: Dict[str, Any], cfg: Config) -> Optional[Assess
         cmd = args.get("command")
         if not isinstance(cmd, str):
             return None
-        ops = A.analyze_command(cmd, cwd=None)
+        try:
+            ops = A.analyze_command(cmd, cwd=None, strict=cfg.strict)
+        except A.AnalysisError as e:
+            return unmeasurable(tool, cmd, str(e))
         if not ops:
             return None
         return _finish(tool, cmd, measure(ops, cwd, _limits(cfg)), cfg)
@@ -86,6 +89,12 @@ def assess_call(tool: str, args: Dict[str, Any], cfg: Config) -> Optional[Assess
         label = path if isinstance(path, str) and path else "patch"
         return _finish(tool, label, imp, cfg)
     return None
+
+
+def unmeasurable(tool: str, label: str, why: str) -> Assessment:
+    """Strict mode: a call blast-radius cannot measure is blocked, not waved through."""
+    v = Verdict(BLOCK, 100, "UNMEASURABLE", [(100, why)], unmeasurable=why)
+    return Assessment(tool=tool, label=label, impact=Impact(), verdict=v)
 
 
 def _finish(tool: str, label: str, imp: Impact, cfg: Config) -> Assessment:

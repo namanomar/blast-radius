@@ -44,11 +44,14 @@ def _key(tool_name: str, args: Dict[str, Any], kwargs: Dict[str, Any]) -> str:
 
 
 def _pre_tool_call(tool_name: str = "", args: Optional[Dict[str, Any]] = None, task_id: str = "", **kwargs):
-    """Policy hook. Fails OPEN: a bug in this plugin must never wedge the agent."""
+    """Policy hook. Fails OPEN by default: a bug in this plugin must never wedge the agent.
+    With ``strict: true`` it fails CLOSED: a call it cannot assess does not run."""
     if tool_name not in WATCHED:
         return None
+    strict = False
     try:
         cfg = _cfg()
+        strict = cfg.strict
         if not cfg.enabled:
             return None
         a = assess_call(tool_name, args or {}, cfg)
@@ -70,6 +73,11 @@ def _pre_tool_call(tool_name: str = "", args: Optional[Dict[str, Any]] = None, t
             return {"action": "approve", "message": render_approval(a), "rule_key": f"blast-radius:{tool_name}"}
         return None
     except Exception:
+        if strict:
+            logger.exception("blast-radius pre_tool_call failed; strict mode blocks the call")
+            return {"action": "block",
+                    "message": "Blocked by blast-radius (strict mode): it could not assess this call "
+                               "(internal error), so it will not run. Retry, or ask the user to run it themselves."}
         logger.exception("blast-radius pre_tool_call failed; letting the call through")
         return None
 

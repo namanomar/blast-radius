@@ -307,3 +307,63 @@ def test_undo_works_even_if_post_hook_never_fired(repo):
     shutil.rmtree(repo / "src")
     (repo / "notes.txt").unlink()
     assert "restored 3 file(s)" in ctx.commands["blast"]("undo")
+
+
+# ---------------------------------------------------------------- strict mode (fail closed)
+
+
+def test_strict_blocks_unparseable_but_default_fails_open(repo):
+    cmd = terminal(repo, "rm -rf 'src")                       # unbalanced quote
+    assert E.assess_call("terminal", cmd, Config()) is None   # default: fail open, as documented
+    a = E.assess_call("terminal", cmd, Config(strict=True))
+    assert a.verdict.action == BLOCK and a.verdict.tier == "UNMEASURABLE" and "cannot be parsed" in a.verdict.unmeasurable
+
+
+def test_strict_blocks_unknowable_targets(repo):
+    assert E.assess_call("terminal", terminal(repo, "rm -rf $TARGET"), Config()).verdict.action == APPROVE
+    for cmd in ("rm -rf $TARGET", "git ls-files | xargs rm", 'python -c "import shutil; shutil.rmtree(p)"'):
+        a = E.assess_call("terminal", terminal(repo, cmd), Config(strict=True))
+        assert a.verdict.action == BLOCK and a.verdict.unmeasurable, cmd
+
+
+def test_strict_reaches_inside_bash_c(repo):
+    cmd = terminal(repo, "bash -c \"rm -rf 'src\"")
+    assert E.assess_call("terminal", cmd, Config()) is None
+    assert E.assess_call("terminal", cmd, Config(strict=True)).verdict.action == BLOCK
+
+
+def test_strict_overrides_advise_mode(repo):
+    a = E.assess_call("terminal", terminal(repo, "rm -rf $TARGET"), Config(strict=True, mode="advise"))
+    assert a.verdict.action == BLOCK
+
+
+def test_strict_does_not_over_block_measurable_commands(repo):
+    cfg = Config(strict=True)
+    assert E.assess_call("terminal", terminal(repo, "ls -la"), cfg) is None
+    assert E.assess_call("terminal", terminal(repo, "rm -rf build"), cfg).verdict.action == ALLOW
+    assert E.assess_call("terminal", terminal(repo, "rm -rf src"), cfg).verdict.action == APPROVE
+    assert E.assess_call("terminal", terminal(repo, "rm -rf .git"), cfg).verdict.tier == "CRITICAL"
+
+
+def test_strict_flag_does_not_leak_between_calls(repo):
+    E.assess_call("terminal", terminal(repo, "rm -rf 'src"), Config(strict=True))
+    assert E.assess_call("terminal", terminal(repo, "rm -rf 'src"), Config()) is None
+
+
+def test_hook_strict_block_message_tells_the_model_how_to_fix(repo):
+    ctx = setup_plugin({"strict": True})
+    r = ctx.hooks["pre_tool_call"](tool_name="terminal", args=terminal(repo, "rm -rf $TARGET"), task_id="t")
+    assert r["action"] == "block"
+    assert "strict mode" in r["message"] and "explicit literal paths" in r["message"]
+
+
+def test_hook_strict_fails_closed_on_internal_error(repo, monkeypatch):
+    ctx = setup_plugin({"strict": True})
+
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(P, "assess_call", boom)
+    r = ctx.hooks["pre_tool_call"](tool_name="terminal", args=terminal(repo, "ls"), task_id="t")
+    assert r["action"] == "block" and "strict mode" in r["message"]
+    assert ctx.hooks["pre_tool_call"](tool_name="web_search", args={}, task_id="t") is None   # unwatched tools untouched
