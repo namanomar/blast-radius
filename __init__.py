@@ -153,10 +153,10 @@ def _tool_blast_restore(args: Dict[str, Any], **kwargs) -> str:
     try:
         cid = str(args.get("capsule_id", "")).strip()
         if cid == "latest":
-            used = [m for m in capsule.list_capsules() if m.get("status") == "executed"]
+            used = capsule.latest_used()
             if not used:
                 return json.dumps({"error": "no executed capsule to restore"})
-            cid = used[0]["id"]
+            cid = used["id"]
         restored, same, refused = capsule.restore(cid, force=False)
         ledger.record({"type": "restore", "capsule": cid, "restored": len(restored), "refused": len(refused)})
         return json.dumps({"capsule": cid, "restored": restored, "already_identical": len(same),

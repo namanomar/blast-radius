@@ -67,10 +67,10 @@ def run(raw: str, cfg_getter: Callable[[], Config]) -> str:
         force = "--force" in parts
         ids = [p for p in parts[1:] if p.startswith("bx-")]
         if sub == "undo" and not ids:
-            used = [m for m in capsule.list_capsules() if m.get("status") == "executed"]
+            used = capsule.latest_used()
             if not used:
                 return "Nothing to undo: no capsule from an executed command."
-            ids = [used[0]["id"]]
+            ids = [used["id"]]
         if not ids:
             return "usage: /blast restore <capsule-id> [--force]   (see /blast list)"
         try:

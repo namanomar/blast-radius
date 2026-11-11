@@ -192,3 +192,14 @@ def prune(keep: int = 200, days: int = 14) -> int:
             discard(m["id"])
             removed += 1
     return removed
+
+
+def latest_used() -> Optional[Dict[str, Any]]:
+    """Newest capsule whose command ran: marked executed, or (if the post hook never fired)
+    pending with captured files that have since changed or vanished."""
+    for m in list_capsules():
+        if m.get("status") == "executed":
+            return m
+        if m.get("status") == "pending" and not unchanged_since(m):
+            return m
+    return None

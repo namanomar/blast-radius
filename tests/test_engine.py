@@ -297,3 +297,13 @@ def test_explain_and_stats_commands(repo, monkeypatch):
 def test_secrets_redacted_in_ledger(repo):
     L.record({"type": "decision", "cmd": "curl -H 'Authorization: bearer sk-abcdef' --token=hunter2"})
     assert "hunter2" not in json.dumps(L.read())
+
+
+def test_undo_works_even_if_post_hook_never_fired(repo):
+    ctx = setup_plugin()
+    args = terminal(repo, "rm -rf src notes.txt")
+    ctx.hooks["pre_tool_call"](tool_name="terminal", args=args, task_id="t")   # no post_tool_call
+    assert "Nothing to undo" in ctx.commands["blast"]("undo")                  # nothing destroyed yet
+    shutil.rmtree(repo / "src")
+    (repo / "notes.txt").unlink()
+    assert "restored 3 file(s)" in ctx.commands["blast"]("undo")
