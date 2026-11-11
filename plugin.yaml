@@ -1,0 +1,47 @@
+name: blast-radius
+version: 1.0.0
+description: "Measures what a command will destroy before it runs: real file counts, bytes, uncommitted git work and secrets at risk. Harmless calls pass silently, risky ones get a concrete impact report at the approval prompt, catastrophic ones are blocked, and anything git cannot restore is saved to a recovery capsule (/blast undo)."
+author: blast-radius contributors
+license: MIT
+tags: [safety, git, approvals, undo]
+requires_hermes: ">=0.22.0"
+provides_tools:
+  - blast_radius
+  - blast_restore
+provides_hooks:
+  - pre_tool_call
+  - post_tool_call
+config_schema:
+  enabled:
+    type: bool
+    default: true
+    description: Turn the whole plugin on or off.
+  mode:
+    type: str
+    default: enforce
+    choices: [enforce, advise]
+    description: "enforce: catastrophic commands are blocked. advise: never block, only ask for approval."
+  approve_score:
+    type: int
+    default: 40
+    description: Risk score (0-100) at which the human approval prompt is forced.
+  block_score:
+    type: int
+    default: 90
+    description: Risk score at which a command is blocked (enforce mode).
+  capsules:
+    type: bool
+    default: true
+    description: Save irreplaceable files (uncommitted, untracked, credentials) before destructive commands.
+  capsule_max_mb:
+    type: int
+    default: 200
+    description: Maximum size of one recovery capsule.
+  capsule_keep:
+    type: int
+    default: 200
+    description: Keep at most this many capsules.
+  capsule_days:
+    type: int
+    default: 14
+    description: Delete capsules older than this many days.
